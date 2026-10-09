@@ -26,6 +26,8 @@ type selectData struct {
 	OrderByParts      []Sqlizer
 	Limit             string
 	Offset            string
+	BoundLimit        Sqlizer
+	BoundOffset       Sqlizer
 	Suffixes          []Sqlizer
 }
 
@@ -168,11 +170,23 @@ func (d *selectData) toSqlRaw() (sqlStr string, args []interface{}, err error) {
 	if len(d.Limit) > 0 {
 		sql.WriteString(" LIMIT ")
 		sql.WriteString(d.Limit)
+	} else if d.BoundLimit != nil {
+		sql.WriteString(" LIMIT ")
+		args, err = appendToSql([]Sqlizer{d.BoundLimit}, sql, "", args)
+		if err != nil {
+			return
+		}
 	}
 
 	if len(d.Offset) > 0 {
 		sql.WriteString(" OFFSET ")
 		sql.WriteString(d.Offset)
+	} else if d.BoundOffset != nil {
+		sql.WriteString(" OFFSET ")
+		args, err = appendToSql([]Sqlizer{d.BoundOffset}, sql, "", args)
+		if err != nil {
+			return
+		}
 	}
 
 	if len(d.Suffixes) > 0 {
@@ -445,8 +459,16 @@ func (b SelectBuilder) Limit(limit uint64) SelectBuilder {
 	return builder.Set(b, "Limit", fmt.Sprintf("%d", limit)).(SelectBuilder)
 }
 
+// LimitParam sets a LIMIT clause on the query with the value bound as a placeholder argument, so
+// queries that differ only in limit share one SQL string.
+func (b SelectBuilder) LimitParam(limit uint64) SelectBuilder {
+	b = builder.Delete(b, "Limit").(SelectBuilder)
+	return builder.Set(b, "BoundLimit", Expr("?", limit)).(SelectBuilder)
+}
+
 // Limit ALL allows to access all records with limit
 func (b SelectBuilder) RemoveLimit() SelectBuilder {
+	b = builder.Delete(b, "BoundLimit").(SelectBuilder)
 	return builder.Delete(b, "Limit").(SelectBuilder)
 }
 
@@ -455,8 +477,16 @@ func (b SelectBuilder) Offset(offset uint64) SelectBuilder {
 	return builder.Set(b, "Offset", fmt.Sprintf("%d", offset)).(SelectBuilder)
 }
 
+// OffsetParam sets an OFFSET clause on the query with the value bound as a placeholder argument, so
+// queries that differ only in offset share one SQL string.
+func (b SelectBuilder) OffsetParam(offset uint64) SelectBuilder {
+	b = builder.Delete(b, "Offset").(SelectBuilder)
+	return builder.Set(b, "BoundOffset", Expr("?", offset)).(SelectBuilder)
+}
+
 // RemoveOffset removes OFFSET clause.
 func (b SelectBuilder) RemoveOffset() SelectBuilder {
+	b = builder.Delete(b, "BoundOffset").(SelectBuilder)
 	return builder.Delete(b, "Offset").(SelectBuilder)
 }
 

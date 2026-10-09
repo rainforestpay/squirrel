@@ -195,18 +195,76 @@ func TestSelectWithOptions(t *testing.T) {
 	assert.Equal(t, "SELECT DISTINCT SQL_NO_CACHE * FROM foo", sql)
 }
 
-func TestSelectWithRemoveLimit(t *testing.T) {
-	sql, _, err := Select("*").From("foo").Limit(10).RemoveLimit().ToSql()
+func TestSelectLimitOffsetLiteral(t *testing.T) {
+	sql, args, err := Select("id").From("foo").Where(Eq{"kind": "A"}).
+		Limit(10).Offset(300).PlaceholderFormat(Dollar).ToSql()
+
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT id FROM foo WHERE kind = $1 LIMIT 10 OFFSET 300", sql)
+	assert.Equal(t, []interface{}{"A"}, args)
+}
+
+func TestSelectLimitOffsetParam(t *testing.T) {
+	build := func(limit, offset uint64) (string, []interface{}) {
+		sql, args, err := Select("id").From("foo").Where(Eq{"kind": "A"}).
+			LimitParam(limit).OffsetParam(offset).PlaceholderFormat(Dollar).ToSql()
+		assert.NoError(t, err)
+		return sql, args
+	}
+
+	sqlA, argsA := build(10, 0)
+	sqlB, argsB := build(25, 300)
+
+	assert.Equal(t, "SELECT id FROM foo WHERE kind = $1 LIMIT $2 OFFSET $3", sqlA)
+	assert.Equal(t, sqlA, sqlB)
+	assert.Equal(t, []interface{}{"A", uint64(10), uint64(0)}, argsA)
+	assert.Equal(t, []interface{}{"A", uint64(25), uint64(300)}, argsB)
+}
+
+func TestSelectLimitOffsetParamInSubquery(t *testing.T) {
+	subquery := Select("id").From("foo").Where(Eq{"kind": "A"}).LimitParam(10).OffsetParam(20)
+	sql, args, err := Select("*").
+		FromSelect(subquery, "sub").
+		Where(Eq{"sub.id": 5}).
+		Limit(1).
+		PlaceholderFormat(Dollar).
+		ToSql()
+
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM (SELECT id FROM foo WHERE kind = $1 LIMIT $2 OFFSET $3) AS sub WHERE sub.id = $4 LIMIT 1", sql)
+	assert.Equal(t, []interface{}{"A", uint64(10), uint64(20), 5}, args)
+}
+
+func TestSelectLimitOffsetLastCallWins(t *testing.T) {
+	sql, args, err := Select("*").From("foo").LimitParam(10).Limit(5).Offset(3).OffsetParam(7).ToSql()
+
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM foo LIMIT 5 OFFSET ?", sql)
+	assert.Equal(t, []interface{}{uint64(7)}, args)
+}
+
+func TestSelectWithRemoveLimitParam(t *testing.T) {
+	sql, args, err := Select("*").From("foo").LimitParam(10).RemoveLimit().OffsetParam(5).RemoveOffset().ToSql()
 
 	assert.NoError(t, err)
 	assert.Equal(t, "SELECT * FROM foo", sql)
+	assert.Empty(t, args)
+}
+
+func TestSelectWithRemoveLimit(t *testing.T) {
+	sql, args, err := Select("*").From("foo").Limit(10).RemoveLimit().ToSql()
+
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM foo", sql)
+	assert.Empty(t, args)
 }
 
 func TestSelectWithRemoveOffset(t *testing.T) {
-	sql, _, err := Select("*").From("foo").Offset(10).RemoveOffset().ToSql()
+	sql, args, err := Select("*").From("foo").Offset(10).RemoveOffset().ToSql()
 
 	assert.NoError(t, err)
 	assert.Equal(t, "SELECT * FROM foo", sql)
+	assert.Empty(t, args)
 }
 
 func TestSelectBuilderNestedSelectDollar(t *testing.T) {
