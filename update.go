@@ -55,6 +55,16 @@ func (d *updateData) QueryRow() RowScanner {
 }
 
 func (d *updateData) ToSql() (sqlStr string, args []interface{}, err error) {
+	sqlStr, args, err = d.toSqlRaw()
+	if err != nil {
+		return
+	}
+
+	sqlStr, err = d.PlaceholderFormat.ReplacePlaceholders(sqlStr)
+	return
+}
+
+func (d *updateData) toSqlRaw() (sqlStr string, args []interface{}, err error) {
 	if len(d.Table) == 0 {
 		err = fmt.Errorf("update statements must specify a table")
 		return
@@ -83,7 +93,7 @@ func (d *updateData) ToSql() (sqlStr string, args []interface{}, err error) {
 	for i, setClause := range d.SetClauses {
 		var valSql string
 		if vs, ok := setClause.value.(Sqlizer); ok {
-			vsql, vargs, err := vs.ToSql()
+			vsql, vargs, err := nestedToSql(vs)
 			if err != nil {
 				return "", nil, err
 			}
@@ -140,7 +150,7 @@ func (d *updateData) ToSql() (sqlStr string, args []interface{}, err error) {
 		}
 	}
 
-	sqlStr, err = d.PlaceholderFormat.ReplacePlaceholders(sql.String())
+	sqlStr = sql.String()
 	return
 }
 
@@ -194,6 +204,11 @@ func (b UpdateBuilder) Scan(dest ...interface{}) error {
 func (b UpdateBuilder) ToSql() (string, []interface{}, error) {
 	data := builder.GetStruct(b).(updateData)
 	return data.ToSql()
+}
+
+func (b UpdateBuilder) toSqlRaw() (string, []interface{}, error) {
+	data := builder.GetStruct(b).(updateData)
+	return data.toSqlRaw()
 }
 
 // MustSql builds the query into a SQL string and bound args.
