@@ -29,6 +29,14 @@ func (p part) ToSql() (sql string, args []interface{}, err error) {
 	return
 }
 
+// finalToSql calls ToSql, finalizing placeholders in the Sqlizer's own format.
+func finalToSql(s Sqlizer) (string, []interface{}, error) {
+	return s.ToSql()
+}
+
+// nestedToSql builds a Sqlizer that is being embedded in another statement.
+// Builders and expressions that implement rawSqlizer are built without
+// replacing placeholders, so the enclosing statement can number them.
 func nestedToSql(s Sqlizer) (string, []interface{}, error) {
 	if raw, ok := s.(rawSqlizer); ok {
 		return raw.toSqlRaw()

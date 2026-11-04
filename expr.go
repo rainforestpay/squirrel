@@ -29,6 +29,17 @@ func Expr(sql string, args ...interface{}) Sqlizer {
 }
 
 func (e expr) ToSql() (sql string, args []interface{}, err error) {
+	return e.toSql(finalToSql)
+}
+
+// toSqlRaw is used when the expression is nested in a builder: nested
+// builders are expanded without finalizing their placeholders, so the
+// outermost builder numbers every placeholder exactly once.
+func (e expr) toSqlRaw() (sql string, args []interface{}, err error) {
+	return e.toSql(nestedToSql)
+}
+
+func (e expr) toSql(expand func(Sqlizer) (string, []interface{}, error)) (sql string, args []interface{}, err error) {
 	simple := true
 	for _, arg := range e.args {
 		if _, ok := arg.(Sqlizer); ok {
@@ -61,7 +72,7 @@ func (e expr) ToSql() (sql string, args []interface{}, err error) {
 
 		if as, ok := ap[0].(Sqlizer); ok {
 			// sqlizer argument; expand it and append the result
-			isql, iargs, err = as.ToSql()
+			isql, iargs, err = expand(as)
 			buf.WriteString(sp[:i])
 			buf.WriteString(isql)
 			args = append(args, iargs...)
@@ -84,12 +95,20 @@ func (e expr) ToSql() (sql string, args []interface{}, err error) {
 type concatExpr []interface{}
 
 func (ce concatExpr) ToSql() (sql string, args []interface{}, err error) {
+	return ce.toSql(finalToSql)
+}
+
+func (ce concatExpr) toSqlRaw() (sql string, args []interface{}, err error) {
+	return ce.toSql(nestedToSql)
+}
+
+func (ce concatExpr) toSql(expand func(Sqlizer) (string, []interface{}, error)) (sql string, args []interface{}, err error) {
 	for _, part := range ce {
 		switch p := part.(type) {
 		case string:
 			sql += p
 		case Sqlizer:
-			pSql, pArgs, err := p.ToSql()
+			pSql, pArgs, err := expand(p)
 			if err != nil {
 				return "", nil, err
 			}
@@ -126,7 +145,15 @@ func Alias(expr Sqlizer, alias string) aliasExpr {
 }
 
 func (e aliasExpr) ToSql() (sql string, args []interface{}, err error) {
-	sql, args, err = e.expr.ToSql()
+	return e.toSql(finalToSql)
+}
+
+func (e aliasExpr) toSqlRaw() (sql string, args []interface{}, err error) {
+	return e.toSql(nestedToSql)
+}
+
+func (e aliasExpr) toSql(expand func(Sqlizer) (string, []interface{}, error)) (sql string, args []interface{}, err error) {
+	sql, args, err = expand(e.expr)
 	if err == nil {
 		sql = fmt.Sprintf("(%s) AS %s", sql, e.alias)
 	}

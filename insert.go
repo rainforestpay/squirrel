@@ -51,6 +51,16 @@ func (d *insertData) QueryRow() RowScanner {
 }
 
 func (d *insertData) ToSql() (sqlStr string, args []interface{}, err error) {
+	sqlStr, args, err = d.toSqlRaw()
+	if err != nil {
+		return
+	}
+
+	sqlStr, err = d.PlaceholderFormat.ReplacePlaceholders(sqlStr)
+	return
+}
+
+func (d *insertData) toSqlRaw() (sqlStr string, args []interface{}, err error) {
 	if len(d.Into) == 0 {
 		err = errors.New("insert statements must specify a table")
 		return
@@ -110,7 +120,7 @@ func (d *insertData) ToSql() (sqlStr string, args []interface{}, err error) {
 		}
 	}
 
-	sqlStr, err = d.PlaceholderFormat.ReplacePlaceholders(sql.String())
+	sqlStr = sql.String()
 	return
 }
 
@@ -126,7 +136,7 @@ func (d *insertData) appendValuesToSQL(w io.Writer, args []interface{}) ([]inter
 		valueStrings := make([]string, len(row))
 		for v, val := range row {
 			if vs, ok := val.(Sqlizer); ok {
-				vsql, vargs, err := vs.ToSql()
+				vsql, vargs, err := nestedToSql(vs)
 				if err != nil {
 					return nil, err
 				}
@@ -150,7 +160,7 @@ func (d *insertData) appendSelectToSQL(w io.Writer, args []interface{}) ([]inter
 		return args, errors.New("select clause for insert statements are not set")
 	}
 
-	selectClause, sArgs, err := d.Select.ToSql()
+	selectClause, sArgs, err := d.Select.toSqlRaw()
 	if err != nil {
 		return args, err
 	}
@@ -214,6 +224,11 @@ func (b InsertBuilder) Scan(dest ...interface{}) error {
 func (b InsertBuilder) ToSql() (string, []interface{}, error) {
 	data := builder.GetStruct(b).(insertData)
 	return data.ToSql()
+}
+
+func (b InsertBuilder) toSqlRaw() (string, []interface{}, error) {
+	data := builder.GetStruct(b).(insertData)
+	return data.toSqlRaw()
 }
 
 // MustSql builds the query into a SQL string and bound args.
